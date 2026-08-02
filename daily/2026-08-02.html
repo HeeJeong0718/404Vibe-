@@ -1,75 +1,77 @@
-<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Daily — 2026-08-02</title>
-  <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 0; padding: 0; display: flex; height: 100vh; }
-    .pane { width: 50%; padding: 1rem; box-sizing: border-box; }
-    textarea { width: 100%; height: calc(100vh - 6rem); resize: none; padding: 1rem; font-size: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", monospace; }
-    #preview { overflow: auto; height: calc(100vh - 6rem); padding: 1rem; border-left: 1px solid #eee; }
-    header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; }
-    .controls { gap: 0.5rem; display: flex; }
-    button { padding: 0.4rem 0.7rem; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; }
-    button.primary { background: #0366d6; color: #fff; border-color: #0366d6; }
-    .meta { color: #666; font-size: 0.9rem; }
-  </style>
-</head>
-<body>
-  <div class="pane">
-    <header>
-      <div>
-        <h2>Daily — 2026-08-02</h2>
-        <div class="meta">이 파일은 마크다운 문법을 입력하면 오른쪽에 미리보기를 보여줍니다.</div>
-      </div>
-      <div class="controls">
-        <button id="btn-preview">미리보기 갱신</button>
-        <button id="btn-clear">지우기</button>
-      </div>
-    </header>
-    <textarea id="editor"># 오늘의 기록 (2026-08-02)
+# 외부 API 장애가 전체 서비스 장애로 확산된 이유
 
-- 할 일 1
-- 할 일 2
+## 핵심 원인
+- 외부 API가 **오류를 반환하지 않고 연결만 유지**했다.
+- **타임아웃이 없어** 요청이 무한정 대기했다.
+- 대기 중인 요청이 **스레드, 커넥션, 메모리 등의 서버 자원**을 계속 점유했다.
+- 추천 기능과 핵심 기능이 **같은 자원을 공유**하고 있어, 결국 핵심 기능까지 영향을 받았다.
 
-## 회고
+---
 
-간단한 메모를 마크다운으로 작성하세요.
-</textarea>
-  </div>
-  <div class="pane" id="preview" aria-live="polite"></div>
+# 왜 타임아웃 + 재시도만으로는 부족한가?
 
-  <!-- marked.js CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <!-- DOMPurify for sanitizing HTML -->
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
-  <script>
-    const editor = document.getElementById('editor');
-    const preview = document.getElementById('preview');
-    const btnPreview = document.getElementById('btn-preview');
-    const btnClear = document.getElementById('btn-clear');
+## 타임아웃
+- 무한 대기를 막기 위해 **반드시 필요**하다.
+- 하지만 장애가 계속되면 **모든 요청이 타임아웃 시간만큼 기다린다.**
+- 요청이 많으면 짧은 타임아웃이어도 대기 요청이 계속 쌓인다.
 
-    function render() {
-      const md = editor.value;
-      // Convert markdown to HTML and sanitize
-      const rawHtml = marked.parse(md, { headerIds: true });
-      const clean = DOMPurify.sanitize(rawHtml);
-      preview.innerHTML = clean;
-    }
+## 재시도(Retry)
+- 일시적인 네트워크 오류에는 효과적이다.
+- 하지만 **외부 서비스 자체가 장애인 상황에서는 오히려 호출을 더 늘려 부하를 증가시킨다.**
+- 따라서 **횟수 제한 + 백오프**가 필수이며, 단독 해결책은 아니다.
 
-    // Live preview while typing (debounced)
-    let timeout;
-    editor.addEventListener('input', () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(render, 300);
-    });
+> **내가 놓친 부분**
+>
+> "대기를 끊는 것(Timeout)"까지만 생각했고,
+> **"계속 호출 자체를 막는 것(Circuit Breaker)"**을 고려하지 못했다.
 
-    btnPreview.addEventListener('click', render);
-    btnClear.addEventListener('click', () => { editor.value = ''; render(); });
+---
 
-    // Initial render
-    render();
-  </script>
-</body>
-</html>
+# 재발 방지를 위한 설계
+
+## 1. Timeout
+- 무한 대기 방지
+- 적절한 시간 내 응답이 없으면 즉시 종료
+
+## 2. Circuit Breaker
+- 장애가 반복되면 **외부 API 호출 자체를 중단**
+- 즉시 실패 처리하거나 대체 결과(Fallback) 반환
+- 장애 전파 방지
+
+## 3. Bulkhead
+- 추천 기능과 핵심 기능의 자원을 분리
+- 추천 API가 자원을 모두 사용해도 핵심 기능은 영향받지 않음
+
+## 4. Fallback
+- 추천 API 실패 시 추천 영역만 제외하고 페이지 제공
+- 핵심 서비스는 계속 동작
+
+---
+
+# 캐시와 프론트 분리
+
+### 캐시
+- 기존 추천 데이터를 제공할 수 있음
+- 하지만 캐시 만료(Cache Miss)까지 해결하지는 못함
+
+### 프론트엔드 분리
+- 추천 위젯을 별도 요청으로 불러오면 초기 화면 영향 감소
+- 하지만 백엔드 보호(Timeout, Circuit Breaker, Bulkhead)는 여전히 필요
+
+---
+
+# 핵심 암기
+
+> **Timeout → 기다림을 끊는다.**
+
+> **Circuit Breaker → 호출 자체를 끊는다.**
+
+> **Bulkhead → 자원을 분리한다.**
+
+> **Fallback → 실패해도 핵심 기능은 제공한다.**
+
+---
+
+# 한 줄 정리
+
+외부 API 장애 시에는 **Timeout으로 무한 대기를 막고, Circuit Breaker로 반복 호출을 차단하며, Bulkhead로 자원을 격리하고, Fallback으로 핵심 서비스만이라도 계속 제공**하는 것이 가장 완성도 높은 설계이다.
