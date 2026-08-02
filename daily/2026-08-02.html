@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Daily — 2026-08-02</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin: 0; padding: 0; display: flex; height: 100vh; }
+    .pane { width: 50%; padding: 1rem; box-sizing: border-box; }
+    textarea { width: 100%; height: calc(100vh - 6rem); resize: none; padding: 1rem; font-size: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", monospace; }
+    #preview { overflow: auto; height: calc(100vh - 6rem); padding: 1rem; border-left: 1px solid #eee; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; }
+    .controls { gap: 0.5rem; display: flex; }
+    button { padding: 0.4rem 0.7rem; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; }
+    button.primary { background: #0366d6; color: #fff; border-color: #0366d6; }
+    .meta { color: #666; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="pane">
+    <header>
+      <div>
+        <h2>Daily — 2026-08-02</h2>
+        <div class="meta">이 파일은 마크다운 문법을 입력하면 오른쪽에 미리보기를 보여줍니다.</div>
+      </div>
+      <div class="controls">
+        <button id="btn-preview">미리보기 갱신</button>
+        <button id="btn-clear">지우기</button>
+      </div>
+    </header>
+    <textarea id="editor"># 오늘의 기록 (2026-08-02)
+
+- 할 일 1
+- 할 일 2
+
+## 회고
+
+간단한 메모를 마크다운으로 작성하세요.
+</textarea>
+  </div>
+  <div class="pane" id="preview" aria-live="polite"></div>
+
+  <!-- marked.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- DOMPurify for sanitizing HTML -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@2.4.0/dist/purify.min.js"></script>
+  <script>
+    const editor = document.getElementById('editor');
+    const preview = document.getElementById('preview');
+    const btnPreview = document.getElementById('btn-preview');
+    const btnClear = document.getElementById('btn-clear');
+
+    function render() {
+      const md = editor.value;
+      // Convert markdown to HTML and sanitize
+      const rawHtml = marked.parse(md, { headerIds: true });
+      const clean = DOMPurify.sanitize(rawHtml);
+      preview.innerHTML = clean;
+    }
+
+    // Live preview while typing (debounced)
+    let timeout;
+    editor.addEventListener('input', () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(render, 300);
+    });
+
+    btnPreview.addEventListener('click', render);
+    btnClear.addEventListener('click', () => { editor.value = ''; render(); });
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
